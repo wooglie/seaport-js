@@ -49,32 +49,148 @@ describeWithFixture(
 
     describe("An ERC1155 is partially transferred", async () => {
       describe("[Buy now] I want to partially buy an ERC1155", async () => {
-        beforeEach(async () => {
-          const { testErc1155 } = fixture;
+        // listed, amount per nft, amount to fill
+        const inputs = [
+          [3, parseEther("1"), 1], // the example from https://github.com/ProjectOpenSea/seaport-js/issues/141
 
-          // Mint 10 ERC1155s to offerer
-          await testErc1155.mint(offerer.address, nftId, 10);
+          ...new Array(13)
+            .fill(0)
+            // @ts-ignore // 'n' is declared but its value is never read.
+            .map((n, i) => [13, parseEther("0.021"), i + 1]),
+          ...new Array(21)
+            .fill(0)
+            // @ts-ignore // 'n' is declared but its value is never read.
+            .map((n, i) => [21, parseEther("0.034"), i + 1]),
+          ...new Array(34)
+            .fill(0)
+            // @ts-ignore // 'n' is declared but its value is never read.
+            .map((n, i) => [34, parseEther("0.035"), i + 1]),
 
-          standardCreateOrderInput = {
-            allowPartialFills: true,
+          [1, parseEther("1"), 1],
+          [1, parseEther("2"), 1],
+          [1, parseEther("3"), 1],
 
-            offer: [
-              {
-                itemType: ItemType.ERC1155,
-                token: testErc1155.address,
-                amount: "10",
-                identifier: nftId,
-              },
-            ],
-            consideration: [
-              {
-                amount: parseEther("10").toString(),
-                recipient: offerer.address,
-              },
-            ],
-            // 2.5% fee
-            fees: [{ recipient: zone.address, basisPoints: 250 }],
-          };
+          [2, parseEther("1"), 1],
+          [2, parseEther("2"), 1],
+          [2, parseEther("3"), 1],
+
+          [2, parseEther("1"), 2],
+          [2, parseEther("2"), 2],
+          [2, parseEther("3"), 2],
+
+          [3, parseEther("1"), 1],
+          [3, parseEther("2"), 1],
+          [3, parseEther("3"), 1],
+
+          [3, parseEther("1"), 2],
+          [3, parseEther("2"), 2],
+          [3, parseEther("3"), 2],
+
+          [3, parseEther("1"), 3],
+          [3, parseEther("2"), 3],
+          [3, parseEther("3"), 3],
+        ];
+
+        describe.only("cases", () => {
+          for (let i = 0; i < inputs.length; i++) {
+            const listed = inputs[i][0] as number;
+            const per = inputs[i][1] as BigNumber;
+            const toFill = inputs[i][2] as number;
+
+            it(`listed: ${listed} per: ${per} toFill: ${toFill}`, async () => {
+              const { seaport, testErc1155 } = fixture;
+
+              // Mint 3 ERC1155s to offerer
+              await testErc1155.mint(offerer.address, nftId, listed);
+
+              standardCreateOrderInput = {
+                allowPartialFills: true,
+
+                offer: [
+                  {
+                    itemType: ItemType.ERC1155,
+                    token: testErc1155.address,
+                    amount: listed.toString(),
+                    identifier: nftId,
+                  },
+                ],
+                consideration: [
+                  {
+                    amount: BigNumber.from(per).mul(listed).toString(),
+                    recipient: offerer.address,
+                  },
+                ],
+                // 2.5% fee
+                fees: [{ recipient: zone.address, basisPoints: 250 }],
+              };
+
+              const { executeAllActions } = await seaport.createOrder(
+                standardCreateOrderInput
+              );
+
+              const order = await executeAllActions();
+
+              expect(order.parameters.orderType).eq(OrderType.PARTIAL_OPEN);
+
+              const orderStatus = await seaport.getOrderStatus(
+                seaport.getOrderHash(order.parameters)
+              );
+
+              const ownerToTokenToIdentifierBalances =
+                await getBalancesForFulfillOrder(
+                  order,
+                  fulfiller.address,
+                  multicallProvider
+                );
+
+              const { actions } = await seaport.fulfillOrder({
+                order,
+                unitsToFill: toFill,
+                accountAddress: fulfiller.address,
+                domain: OPENSEA_DOMAIN,
+              });
+
+              expect(actions.length).to.eq(1);
+
+              const action = actions[0];
+
+              expect(action).to.deep.equal({
+                type: "exchange",
+                transactionMethods: action.transactionMethods,
+              });
+
+              const transaction = await action.transactionMethods.transact();
+
+              const receipt = await transaction.wait();
+
+              expect(transaction.data.slice(-8)).to.eq(OPENSEA_TAG);
+
+              const offererErc1155Balance = await testErc1155.balanceOf(
+                offerer.address,
+                nftId
+              );
+
+              const fulfillerErc1155Balance = await testErc1155.balanceOf(
+                fulfiller.address,
+                nftId
+              );
+
+              expect(offererErc1155Balance).eq(BigNumber.from(listed - toFill));
+              expect(fulfillerErc1155Balance).eq(BigNumber.from(toFill));
+
+              await verifyBalancesAfterFulfill({
+                ownerToTokenToIdentifierBalances,
+                order,
+                unitsToFill: toFill,
+                orderStatus,
+                fulfillerAddress: fulfiller.address,
+                multicallProvider,
+                fulfillReceipt: receipt,
+              });
+
+              expect(fulfillStandardOrderSpy).calledOnce;
+            });
+          }
         });
 
         it("ERC1155 <=> ETH", async () => {
