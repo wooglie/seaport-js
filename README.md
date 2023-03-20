@@ -179,3 +179,5 @@ See [the contributing guide](CONTRIBUTING.md) for detailed instructions on how t
 [docs-link]: https://github.com/ProjectOpenSea/seaport-js/blob/main/README.md#getting-started
 [discussions-badge]: https://img.shields.io/badge/Seaport.js-discussions-blueviolet
 [discussions-link]: https://github.com/ProjectOpenSea/seaport-js/discussions
+
+Run the workflow
