@@ -147,6 +147,79 @@ describeWithFixture(
           expect(fulfillStandardOrderSpy).calledOnce;
         });
 
+        it("ERC1155 <=> ETH doesn't fail due to rounding error", async () => {
+          const { seaport, testErc1155 } = fixture;
+
+          // broke out key params to make testing different values easier:
+          const unitsForSale = "3";
+          // a unit sale price with a precision up to 12 decimals seems to work in combination with *any* fee (for tokens with 18 decimals).
+          // if *no* fees are involved, 18 decimals may work fine. in-between your mileage may vary, depending on the value of `basisPoints`.
+          const pricePerUnit = "3.1415926535897";
+          const basisPoints = 247;
+
+          // maker creates partially fillable listing with amount of 3
+          standardCreateOrderInput.offer = [
+            {
+              itemType: ItemType.ERC1155,
+              token: testErc1155.address,
+              amount: unitsForSale,
+              identifier: nftId,
+            },
+          ];
+
+          // calculate total price (price per unit * units for sale) and fees
+          standardCreateOrderInput.consideration = [
+            {
+              amount: parseEther(pricePerUnit).mul(unitsForSale).toString(),
+              recipient: offerer.address,
+            },
+          ];
+          standardCreateOrderInput.fees = [
+            { recipient: zone.address, basisPoints },
+          ];
+
+          const { executeAllActions } = await seaport.createOrder(
+            standardCreateOrderInput
+          );
+
+          const order = await executeAllActions();
+
+          expect(order.parameters.orderType).eq(OrderType.PARTIAL_OPEN);
+
+          // taker tries to buy 2 of the items
+          const { actions } = await seaport.fulfillOrder({
+            order,
+            unitsToFill: 2,
+            accountAddress: fulfiller.address,
+            domain: OPENSEA_DOMAIN,
+          });
+
+          expect(actions.length).to.eq(1);
+
+          const action = actions[0];
+
+          expect(action).to.deep.equal({
+            type: "exchange",
+            transactionMethods: action.transactionMethods,
+          });
+
+          const transaction = await action.transactionMethods.transact();
+          await transaction.wait();
+
+          const offererErc1155Balance = await testErc1155.balanceOf(
+            offerer.address,
+            nftId
+          );
+
+          const fulfillerErc1155Balance = await testErc1155.balanceOf(
+            fulfiller.address,
+            nftId
+          );
+
+          expect(offererErc1155Balance).eq(BigNumber.from(8));
+          expect(fulfillerErc1155Balance).eq(BigNumber.from(2));
+        });
+
         it("ERC1155 <=> ERC20", async () => {
           const { seaport, testErc20, testErc1155 } = fixture;
 
@@ -208,6 +281,133 @@ describeWithFixture(
 
           expect(
             await testErc20.allowance(
+              fulfiller.address,
+              seaport.contract.address
+            )
+          ).to.equal(MAX_INT);
+
+          const fulfillAction = actions[1];
+
+          expect(fulfillAction).to.be.deep.equal({
+            type: "exchange",
+            transactionMethods: fulfillAction.transactionMethods,
+          });
+
+          const transaction = await fulfillAction.transactionMethods.transact();
+
+          expect(transaction.data.slice(-8)).to.eq(OPENSEA_TAG);
+
+          const receipt = await transaction.wait();
+
+          const offererErc1155Balance = await testErc1155.balanceOf(
+            offerer.address,
+            nftId
+          );
+
+          const fulfillerErc1155Balance = await testErc1155.balanceOf(
+            fulfiller.address,
+            nftId
+          );
+
+          expect(offererErc1155Balance).eq(BigNumber.from(8));
+          expect(fulfillerErc1155Balance).eq(BigNumber.from(2));
+
+          await verifyBalancesAfterFulfill({
+            ownerToTokenToIdentifierBalances,
+            order,
+            unitsToFill: 2,
+            orderStatus,
+            fulfillerAddress: fulfiller.address,
+            multicallProvider,
+            fulfillReceipt: receipt,
+          });
+
+          expect(fulfillStandardOrderSpy).calledOnce;
+        });
+
+        it("ERC1155 <=> ERC20 (6 decimals)", async () => {
+          const { seaport, testErc20USDC, testErc1155 } = fixture;
+
+          // broke out key params to make testing different values easier:
+          const unitsForSale = "3";
+          // a unit sale price with a precision up to 12 decimals seems to work in combination with *any* fee (for tokens with 18 decimals).
+          // if *no* fees are involved, 18 decimals may work fine. in-between your mileage may vary, depending on the value of `basisPoints`.
+          const pricePerUnit = "3.1415926535897";
+          const basisPoints = 247;
+
+          // maker creates partially fillable listing with amount of 3
+          standardCreateOrderInput.offer = [
+            {
+              itemType: ItemType.ERC1155,
+              token: testErc1155.address,
+              amount: unitsForSale,
+              identifier: nftId,
+            },
+          ];
+
+          // calculate total price (price per unit * units for sale) and fees
+          standardCreateOrderInput.consideration = [
+            {
+              amount: parseEther(pricePerUnit).mul(unitsForSale).toString(),
+              recipient: offerer.address,
+              // Use ERC20 instead of eth
+              token: testErc20USDC.address,
+            },
+          ];
+          standardCreateOrderInput.fees = [
+            { recipient: zone.address, basisPoints },
+          ];
+
+          await testErc20USDC.mint(
+            fulfiller.address,
+            BigNumber.from(
+              (standardCreateOrderInput.consideration[0] as CurrencyItem).amount
+            )
+          );
+
+          const { executeAllActions } = await seaport.createOrder(
+            standardCreateOrderInput
+          );
+
+          const order = await executeAllActions();
+
+          expect(order.parameters.orderType).eq(OrderType.PARTIAL_OPEN);
+
+          const orderStatus = await seaport.getOrderStatus(
+            seaport.getOrderHash(order.parameters)
+          );
+
+          const ownerToTokenToIdentifierBalances =
+            await getBalancesForFulfillOrder(
+              order,
+              fulfiller.address,
+              multicallProvider
+            );
+
+          const { actions } = await seaport.fulfillOrder({
+            order,
+            unitsToFill: 2,
+            accountAddress: fulfiller.address,
+            domain: OPENSEA_DOMAIN,
+          });
+
+          expect(actions.length).to.eq(2);
+
+          const approvalAction = actions[0];
+
+          expect(approvalAction).to.deep.equal({
+            type: "approval",
+            token: testErc20USDC.address,
+            identifierOrCriteria: "0",
+            itemType: ItemType.ERC20,
+            transactionMethods: approvalAction.transactionMethods,
+            operator: seaport.contract.address,
+          });
+
+          await approvalAction.transactionMethods.transact();
+
+          expect(
+            await testErc20USDC.allowance(
               fulfiller.address,
               seaport.contract.address
             )
