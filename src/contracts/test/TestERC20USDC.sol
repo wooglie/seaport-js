@@ -4,7 +4,7 @@ pragma solidity >=0.8.7;
 import "@rari-capital/solmate/src/tokens/ERC20.sol";
 
 // Used for minting test ERC20s in our tests
-contract TestERC20USDC is ERC20("Test20USDC", "TST20", 28) {
+contract TestERC20USDC is ERC20("Test20USDC", "TST20", 6) {
     bool public blocked;
 
     constructor() {
