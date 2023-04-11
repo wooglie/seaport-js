@@ -104,6 +104,9 @@ export const verifyBalancesAfterFulfill = async ({
 }) => {
   const totalFilled = orderStatus?.totalFilled ?? BigNumber.from(0);
   const totalSize = orderStatus?.totalSize ?? BigNumber.from(0);
+  const unitsToFillBn = unitsToFill
+    ? BigNumber.from(unitsToFill)
+    : BigNumber.from(1);
 
   const orderWithAdjustedFills = unitsToFill
     ? mapOrderAmountsFromUnitsToFill(order, {
@@ -111,6 +114,7 @@ export const verifyBalancesAfterFulfill = async ({
         totalSize,
       })
     : mapOrderAmountsFromFilledStatus(order, {
+        unitsToFill: unitsToFillBn,
         totalFilled,
         totalSize,
       });

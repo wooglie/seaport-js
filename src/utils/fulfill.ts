@@ -363,6 +363,15 @@ export async function fulfillStandardOrder(
     >
   >
 > {
+  const unitsToFillBn = unitsToFill
+    ? BigNumber.from(unitsToFill)
+    : BigNumber.from(1);
+
+  console.log("unitsToFillBn", unitsToFillBn);
+  console.log("unitsToFill", unitsToFill);
+  console.log("totalSize", totalSize);
+  console.log("totalFilled", totalFilled);
+
   // If we are supplying units to fill, we adjust the order by the minimum of the amount to fill and
   // the remaining order left to be fulfilled
   const orderWithAdjustedFills = unitsToFill
@@ -372,6 +381,7 @@ export async function fulfillStandardOrder(
       })
     : // Else, we adjust the order by the remaining order left to be fulfilled
       mapOrderAmountsFromFilledStatus(order, {
+        unitsToFill: unitsToFillBn,
         totalFilled,
         totalSize,
       });
@@ -379,6 +389,11 @@ export async function fulfillStandardOrder(
   const {
     parameters: { offer, consideration },
   } = orderWithAdjustedFills;
+
+  console.log(
+    "orderWithAdjustedFills",
+    JSON.stringify(orderWithAdjustedFills, null, 2)
+  );
 
   const considerationIncludingTips = [...consideration, ...tips];
 
@@ -433,7 +448,7 @@ export async function fulfillStandardOrder(
 
   const isGift = recipientAddress !== ethers.constants.AddressZero;
 
-  const useAdvanced = Boolean(unitsToFill) || hasCriteriaItems || isGift;
+  const useAdvanced = Boolean(unitsToFillBn) || hasCriteriaItems || isGift;
 
   const orderAccountingForTips: OrderStruct = {
     ...order,
@@ -446,8 +461,11 @@ export async function fulfillStandardOrder(
 
   const { numerator, denominator } = getAdvancedOrderNumeratorDenominator(
     order,
-    unitsToFill
+    unitsToFillBn
   );
+
+  console.log("numerator", numerator);
+  console.log("denominator", denominator);
 
   const exchangeAction = {
     type: "exchange",
@@ -580,6 +598,9 @@ export async function fulfillAvailableOrders({
           })
         : // Else, we adjust the order by the remaining order left to be fulfilled
           mapOrderAmountsFromFilledStatus(orderMetadata.order, {
+            unitsToFill: orderMetadata.unitsToFill
+              ? BigNumber.from(orderMetadata.unitsToFill)
+              : BigNumber.from(1),
             totalFilled: orderMetadata.orderStatus.totalFilled,
             totalSize: orderMetadata.orderStatus.totalSize,
           }),
@@ -710,6 +731,7 @@ export async function fulfillAvailableOrders({
       };
     }
   );
+  // console.log("advancedOrdersWithTips", advancedOrdersWithTips);
 
   const { offerFulfillments, considerationFulfillments } =
     generateFulfillOrdersFulfillments(ordersMetadata);
@@ -846,13 +868,25 @@ export const getAdvancedOrderNumeratorDenominator = (
   const maxUnits = getMaximumSizeForOrder(order);
   const unitsToFillBn = BigNumber.from(unitsToFill);
 
+  // console.log("getAdvancedOrderNumeratorDenominator maxUnits", maxUnits);
+  // console.log(
+  //   "getAdvancedOrderNumeratorDenominator unitsToFillBn",
+  //   unitsToFillBn
+  // );
+
   // Reduce the numerator/denominator as optimization
   const unitsGcd = gcd(unitsToFillBn, maxUnits);
 
-  const numerator = unitsToFill
-    ? unitsToFillBn.div(unitsGcd)
-    : BigNumber.from(1);
-  const denominator = unitsToFill ? maxUnits.div(unitsGcd) : BigNumber.from(1);
+  // const numerator = unitsToFill
+  //   ? unitsToFillBn.div(unitsGcd)
+  //   : BigNumber.from(1);
+  // const denominator = unitsToFill ? maxUnits.div(unitsGcd) : BigNumber.from(1);
+
+  const numerator = BigNumber.from(unitsToFill);
+  const denominator = BigNumber.from(maxUnits);
+
+  console.log("numerator", unitsToFill);
+  console.log("denominator", maxUnits);
 
   return { numerator, denominator };
 };

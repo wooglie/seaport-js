@@ -168,36 +168,48 @@ export const totalItemsAmount = <T extends OfferItem>(items: T[]) => {
  */
 export const mapOrderAmountsFromFilledStatus = (
   order: Order,
-  { totalFilled, totalSize }: { totalFilled: BigNumber; totalSize: BigNumber }
+  {
+    unitsToFill,
+    totalFilled,
+    totalSize,
+  }: { unitsToFill: BigNumber; totalFilled: BigNumber; totalSize: BigNumber }
 ): Order => {
-  if (totalFilled.eq(0) || totalSize.eq(0)) {
+  if (totalFilled.eq(0) || totalSize.eq(0) || unitsToFill.eq(0)) {
     return order;
   }
 
-  // i.e if totalFilled is 3 and totalSize is 4, there are 1 / 4 order amounts left to fill.
-  const basisPoints = totalSize
-    .sub(totalFilled)
-    .mul(ONE_HUNDRED_PERCENT_BP)
-    .div(totalSize);
+  if (unitsToFill.lte(0)) {
+    throw new Error("Units to fill must be greater than 1");
+  }
 
   return {
     parameters: {
       ...order.parameters,
       offer: order.parameters.offer.map((item) => ({
         ...item,
-        startAmount: multiplyBasisPoints(
+        startAmount: multiplyDivision(
           item.startAmount,
-          basisPoints
+          unitsToFill,
+          totalSize
         ).toString(),
-        endAmount: multiplyBasisPoints(item.endAmount, basisPoints).toString(),
+        endAmount: multiplyDivision(
+          item.endAmount,
+          unitsToFill,
+          totalSize
+        ).toString(),
       })),
       consideration: order.parameters.consideration.map((item) => ({
         ...item,
-        startAmount: multiplyBasisPoints(
+        startAmount: multiplyDivision(
           item.startAmount,
-          basisPoints
+          unitsToFill,
+          totalSize
         ).toString(),
-        endAmount: multiplyBasisPoints(item.endAmount, basisPoints).toString(),
+        endAmount: multiplyDivision(
+          item.endAmount,
+          unitsToFill,
+          totalSize
+        ).toString(),
       })),
     },
     signature: order.signature,
